@@ -1,0 +1,73 @@
+variables:
+  # Sets a custom local Maven repository path to .m2/repository inside the project directory.
+  # By specifying this path, the build process uses a project-specific repository.
+  # This ensures consistency in the CI/CD environment.
+  MAVEN_OPTS: -Dmaven.repo.local=.m2/repository
+  # -B : batch mode. Runs Maven in non-interactive mode, in this mode Maven never stops to accept input.
+  # -DskipTests : skips running the tests during build. Instead, we run them in the test stage.
+  MAVEN_CLI_OPTS: "-B -DskipTests"
+
+# Image that the runner will use.
+image: maven:latest
+
+stages:
+  - build
+  - test
+  - deploy
+
+# Directories in the cache section persist through the different stages.
+cache:
+  paths:
+    - .m2/repository
+    - target
+
+# Ensure the code compiles, and also build the project for testing and deploying in later stages.
+build_job:
+  stage: build
+
+  script:
+    - echo "Maven compile started"
+    - mvn $MAVEN_CLI_OPTS clean compile
+
+# Ensure tests pass.
+test_job:
+  stage: test
+
+  script:
+    - echo "Maven test started"
+    - mvn test
+
+# Deploy the project to your server.
+deploy_job:
+  stage: deploy
+
+  script:
+    # Install ssh-agent if not already installed; it is required by Docker.
+    - 'command -v ssh-agent >/dev/null || ( apt-get update -y && apt-get install openssh-client -y )'
+
+    # Run ssh-agent (inside the build environment).
+    - eval $(ssh-agent -s)
+
+    # Add the SSH key stored in SSH_PRIVATE_KEY variable to the agent store.
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+
+    # Create the SSH directory and give it the right permissions.
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+
+    # Add your host to the list of known hosts to prevent SSH prompting for confirmation.
+    - ssh-keyscan -p 2238 -H group38.ssh.ap.virtuallab.dev >> ~/.ssh/known_hosts
+
+    # Package the Maven project.
+    - echo "Maven package started"
+    - mvn $MAVEN_CLI_OPTS clean package
+
+    # Deploy the application to your server.
+    - echo "Deploying application to server"
+    - scp -P 2238 -r . student@group38.ssh.ap.virtuallab.dev:/home/student/my_spring_app
+    - ssh -p 2238 student@group38.ssh.ap.virtuallab.dev "
+      mkdir -p /home/student/my_spring_app &&
+      cd /home/student/my_spring_app && 
+      docker-compose down &&
+      docker-compose up --build -d
+      "

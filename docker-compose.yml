@@ -1,0 +1,33 @@
+version: '3'
+services:
+  mariadb:
+    image: mariadb:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: reviewdb
+      MYSQL_USER: reviewuser
+      MYSQL_PASSWORD: reviewpassword
+    networks:
+      - review-network
+    ports:
+      - "3307:3306"
+
+  springboot:
+    image: review-system-app
+    build:
+      context: .  # Ensure the Dockerfile for your Spring Boot app is in the same directory
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/reviewdb
+      SPRING_DATASOURCE_USERNAME: reviewuser
+      SPRING_DATASOURCE_PASSWORD: reviewpassword
+    depends_on:
+      - mariadb
+    networks:
+      - review-network
+    ports:
+      - "8080:8080"
+
+networks:
+  review-network:
+    driver: bridge
+
